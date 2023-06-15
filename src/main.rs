@@ -2,6 +2,8 @@ mod discord;
 mod models;
 mod utils;
 
+use std::env;
+
 use crate::discord::send_message;
 use crate::utils::{change_text, check_for_change};
 use dotenv::dotenv;
@@ -14,7 +16,7 @@ use tokio::main;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
-    let conn = Connection::open("store.db")?;
+    let conn = Connection::open(env::var("DB_URL").expect("missing DB_URL in .env"))?;
     conn.execute(
             "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY, title TEXT, variant_title TEXT, available BOOL, price TEXT)",
         (),
@@ -31,6 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     let products = body.json::<ProductRespose>().await.unwrap();
+
+    println!("Found {} products", products.products.len());
 
     for product in &products.products {
         for product_variant in &product.variants {
@@ -70,6 +74,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     body.push(change_text(change, &product_old, &product_current));
                 }
 
+                println!(
+                    "Product {} ({}) was changed",
+                    product_current.title, product_current.id
+                );
+
                 conn.execute(
                     "UPDATE products SET title = ?1, variant_title = ?2, available = ?3, price = ?4 WHERE id = ?5",
             (
@@ -86,6 +95,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(err) => eprintln!("Updating products {}", err),
                 }
             } else if product_current == product_old && !product_old.from_db {
+                println!(
+                    "New product {} ({})",
+                    product_current.title, product_current.id
+                );
+
                 conn.execute(
                             "INSERT INTO products (id, title, variant_title, available, price) VALUES (?1, ?2, ?3, ?4, ?5)",
                     (
